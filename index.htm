@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Elmo Games – Kostenlose Browser-Spiele</title>
+  <style>
+    body {
+      background: #0d1117;
+      color: #c9d1d9;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      text-align: center;
+    }
+    h1 { color: #58a6ff; margin-bottom: 10px; }
+    p.intro { margin-bottom: 30px; }
+    .game {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      margin: 30px auto;
+      padding: 20px;
+      max-width: 900px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+    }
+    .game h2 { margin-top: 0; color: #79c0ff; }
+    iframe {
+      width: 100%;
+      height: 600px;          /* erhöht – besser für die meisten Spiele */
+      border: none;
+      border-radius: 10px;
+      background: #000;       /* falls iframe leer ist, sieht es besser aus */
+    }
+    .note {
+      color: #8b949e;
+      font-size: 0.9em;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Elmo Games 🎮</h1>
+  <p class="intro">Kostenlose Browser-Spiele – direkt im Browser spielen!</p>
+
+  <div class="game">
+    <h2>Among Us Singleplayer (Fan-Game)</h2>
+    <iframe src="https://sackgta.itch.io/among-us-single-player-fan-game/embed" allowfullscreen></iframe>
+    <p class="note">Gegen Bots üben – funktioniert zuverlässig im Browser</p>
+  </div>
+
+  <div class="game">
+    <h2>Bubble Tower 3D</h2>
+    <iframe src="https://play.famobi.com/bubble-tower-3d" allowfullscreen></iframe>
+    <p class="note">Entspannendes Puzzle mit Blasen – von Famobi</p>
+  </div>
+
+  <div class="game slither-container" style="position: relative; overflow: hidden; border-radius: 10px; background: #000;">
+    <h2>Slither.io Mini (Singleplayer)</h2>
+    <div id="slither-ui">
+      Score: <span id="score">0</span>
+    </div>
+    <canvas id="slither-canvas"></canvas>
+    <p class="note" style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); margin: 0; z-index: 5; color: #aaa; font-size: 0.9em; pointer-events: none;">
+      Finger/Maus bewegen zum Steuern | Doppeltippen oder Leertaste = Boost
+    </p>
+  </div>
+
+  <script>
+    // Verbesserte Slither.io Mini – iPad / Touch Fix
+    const canvas = document.getElementById('slither-canvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+
+    let WIDTH = 800;
+    let HEIGHT = 600;
+
+    function resizeCanvas() {
+      // Wichtig: clientWidth/Height statt window.inner*
+      const rect = canvas.getBoundingClientRect();
+      WIDTH = canvas.width = rect.width;
+      HEIGHT = canvas.height = rect.height;
+      // Pixel-Dichte für scharfe Darstellung auf Retina/iPad
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+    }
+
+    // Resize bei Laden + Änderung
+    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('orientationchange', resizeCanvas);
+    resizeCanvas(); // Sofort initialisieren
+
+    let snake = [];
+    let angle = 0;
+    let speed = 2.5;
+    let boost = false;
+    let score = 0;
+
+    function resetGame() {
+      snake = [];
+      for (let i = 0; i < 25; i++) {
+        snake.push({x: WIDTH/2 - i*5, y: HEIGHT/2});
+      }
+      score = 0;
+      scoreEl.textContent = '0';
+      foods = [];
+      for (let i = 0; i < 100; i++) spawnFood();
+    }
+    resetGame();
+
+    let foods = [];
+    function spawnFood() {
+      foods.push({
+        x: Math.random() * WIDTH,
+        y: Math.random() * HEIGHT,
+        color: `hsl(${Math.random()*360}, 85%, 60%)`,
+        size: 6 + Math.random()*8
+      });
+    }
+
+    let pointer = {x: WIDTH/2, y: HEIGHT/2}; // Pointer statt mouse (besser für Touch)
+
+    // Touch + Mouse einheitlich behandeln
+    function updatePointer(e) {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      pointer.x = clientX - rect.left;
+      pointer.y = clientY - rect.top;
+    }
+
+    canvas.addEventListener('mousemove', updatePointer);
+    canvas.addEventListener('touchmove', updatePointer);
+    canvas.addEventListener('touchstart', updatePointer);
+
+    // Boost: Leertaste oder Doppeltipp
+    window.addEventListener('keydown', e => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        boost = true;
+      }
+    });
+    window.addEventListener('keyup', e => {
+      if (e.code === 'Space') boost = false;
+    });
+
+    // Doppeltipp für Boost auf Touch
+    let lastTap = 0;
+    canvas.addEventListener('touchend', e => {
+      const now = Date.now();
+      if (now - lastTap < 300) {
+        boost = !boost; // Toggle für Touch
+      }
+      lastTap = now;
+    });
+
+    function update() {
+      if (snake.length === 0) return;
+
+      const dx = pointer.x - snake[0].x;
+      const dy = pointer.y - snake[0].y;
+      angle = Math.atan2(dy, dx);
+
+      let currentSpeed = boost ? speed * 2.2 : speed;
+      const head = {
+        x: snake[0].x + Math.cos(angle) * currentSpeed,
+        y: snake[0].y + Math.sin(angle) * currentSpeed
+      };
+
+      // Kollision mit sich selbst
+      if (snake.length > 40) {
+        for (let i = 20; i < snake.length; i += 10) {
+          if (Math.hypot(head.x - snake[i].x, head.y - snake[i].y) < 18) {
+            alert("Game Over! Score: " + score);
+            resetGame();
+            return;
+          }
+        }
+      }
+
+      snake.unshift(head);
+
+      // Essen
+      for (let i = foods.length - 1; i >= 0; i--) {
+        const f = foods[i];
+        if (Math.hypot(head.x - f.x, head.y - f.y) < f.size + 14) {
+          foods.splice(i, 1);
+          score += 1;
+          scoreEl.textContent = score;
+          snake.push({...snake[snake.length-1]});
+          spawnFood();
+        }
+      }
+
+      // Natürliches Schrumpfen (optional)
+      if (!boost && snake.length > 50 + score) {
+        snake.pop();
+      }
+    }
+
+    function draw() {
+      ctx.fillStyle = '#0a0f1a';
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      // Gitter
+      ctx.strokeStyle = 'rgba(80,100,220,0.07)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < WIDTH; x += 50) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, HEIGHT); ctx.stroke();
+      }
+      for (let y = 0; y < HEIGHT; y += 50) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WIDTH, y); ctx.stroke();
+      }
+
+      // Essen
+      foods.forEach(f => {
+        ctx.fillStyle = f.color;
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, f.size, 0, Math.PI*2);
+        ctx.fill();
+      });
+
+      // Schlange
+      if (snake.length < 2) return;
+      ctx.lineWidth = 28;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      for (let i = 0; i < snake.length - 1; i++) {
+        const t = i / (snake.length - 1);
+        ctx.strokeStyle = `hsl(${ (t*200 + 180) % 360 }, 95%, 55%)`;
+        ctx.beginPath();
+        ctx.moveTo(snake[i].x, snake[i].y);
+        ctx.lineTo(snake[i+1].x, snake[i+1].y);
+        ctx.stroke();
+      }
+
+      // Augen
+      const head = snake[0];
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(head.x + Math.cos(angle)*12, head.y + Math.sin(angle)*12 - 8, 6, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(head.x + Math.cos(angle)*12, head.y + Math.sin(angle)*12 + 8, 6, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    function gameLoop() {
+      update();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Starte das Spiel erst, wenn Canvas Größe hat
+    if (WIDTH > 10 && HEIGHT > 10) {
+      gameLoop();
+    } else {
+      setTimeout(gameLoop, 300); // Sicherheitsverzögerung für iPad
+    }
+  </script>
+
+</body>
+</html>
